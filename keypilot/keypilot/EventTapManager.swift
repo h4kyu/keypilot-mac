@@ -1,14 +1,17 @@
 import AppKit
+import ApplicationServices
 import CoreGraphics
 
-// Listens for keyboard events to detect shortcut adoption.
-// Uses a listen-only tap so it never blocks or modifies events.
+// Listens for keyboard events (shortcut adoption) and mouse-up events
+// (UI hit-testing). Uses a listen-only tap so it never blocks or modifies.
 final class EventTapManager {
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
 
     func start() {
-        let mask: CGEventMask = 1 << CGEventType.keyDown.rawValue
+        let mask: CGEventMask =
+            (1 << CGEventType.keyDown.rawValue) |
+            (1 << CGEventType.leftMouseUp.rawValue)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -33,6 +36,13 @@ final class EventTapManager {
     fileprivate func handleKeyDown(_ event: CGEvent) {
         let flags = event.flags
         guard flags.contains(.maskCommand) else { return }
+
+        // Record for suppression. Done before adoption logging so it covers
+        // every ⌘-modified shortcut, not just the v1 adoption table below.
+        if let shortcut = ShortcutResolver.format(cgFlags: flags, char: Self.character(from: event)) {
+            KeyboardSuppressor.shared.recordShortcut(shortcut)
+        }
+
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
 
         // v1 shortcut detection table (key codes for ⌘ + letter)

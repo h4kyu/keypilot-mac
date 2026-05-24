@@ -328,12 +328,14 @@ Goal: reliable universal menu coaching.
 Implement:
 
 - `MenuCommandDetector`
+- `ContextMenuDetector`
 - `ShortcutResolver`
 - menu path extraction
 - shortcut formatting
 - app/bundle tracking
 - local action store
 - suppression rules v1
+  - Suppress menu-driven hints when the same shortcut was just pressed via keyboard within a short window (~150 ms). The AX `MenuItemSelected` notification fires on shortcut invocation as well as on mouse selection, so the invocation source must be attributed by correlating with the event tap before showing a hint.
 
 Support:
 

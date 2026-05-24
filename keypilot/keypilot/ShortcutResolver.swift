@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 struct SemanticAction {
     let menuTitle: String   // e.g. "Copy"
