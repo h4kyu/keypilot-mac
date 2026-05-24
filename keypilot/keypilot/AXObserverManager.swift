@@ -6,7 +6,36 @@ import ApplicationServices
 final class AXObserverManager {
     private var observer: AXObserver?
     private var observedPID: pid_t = 0
+    private var observedElements: [AXUIElement] = []
     private var workspaceToken: Any?
+
+    // Last item highlighted via SelectedChildrenChanged. If a menu closes
+    // soon after the highlight, we treat the highlight as a click — AppKit
+    // doesn't post MenuItemSelected for mouse-driven menu invocations.
+    private var lastHighlightedItem: AXUIElement?
+    private var lastHighlightedAt: Date?
+
+    // AXUIElement is a CFType; direct `as? [AXUIElement]` casts on the
+    // CFTypeRef returned by AXUIElementCopyAttributeValue are unreliable
+    // across macOS versions. Bridging through [AnyObject] and casting
+    // each element is the pattern AXSwift and other AX wrappers use.
+    private static func axChildren(of element: AXUIElement) -> [AXUIElement] {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &ref) == .success,
+              let array = ref as? [AnyObject] else { return [] }
+        return array.map { $0 as! AXUIElement }
+    }
+
+    // For diagnostics: "AXMenuBarItem/'Edit'". Reads role + title.
+    fileprivate static func describe(_ element: AXUIElement) -> String {
+        var roleRef: AnyObject?
+        AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef)
+        var titleRef: AnyObject?
+        AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &titleRef)
+        let role = (roleRef as? String) ?? "?"
+        let title = (titleRef as? String) ?? ""
+        return "\(role)/'\(title)'"
+    }
 
     func start() {
         if let app = NSWorkspace.shared.frontmostApplication {
@@ -35,26 +64,91 @@ final class AXObserverManager {
 
         let appEl = AXUIElementCreateApplication(pid)
         let note = kAXMenuItemSelectedNotification as CFString
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        var registered: [AXUIElement] = []
 
-        // Adding the notification to the app element causes it to fire for
-        // any menu item selected in that process.
-        guard AXObserverAddNotification(obs, appEl, note,
-                                        Unmanaged.passUnretained(self).toOpaque()) == .success
-        else { return }
+        // (a) App element catches AppKit's shortcut-dispatched MenuItemSelected
+        // (⌘C and friends). The notification is posted here and does not
+        // propagate down into the menu hierarchy.
+        if AXObserverAddNotification(obs, appEl, note, refcon) == .success {
+            registered.append(appEl)
+        }
+
+        // (b) Each AXMenu catches mouse-click MenuItemSelected. The notification
+        // fires on the clicked AXMenuItem and propagates exactly one level up —
+        // to its containing AXMenu — but no further. The hierarchy is:
+        //   AXApplication > AXMenuBar > AXMenuBarItem > AXMenu > AXMenuItem
+        // so we have to descend two levels from the menu bar before registering.
+        var menuBarRef: CFTypeRef?
+        let mbResult = AXUIElementCopyAttributeValue(appEl, kAXMenuBarAttribute as CFString, &menuBarRef)
+        // Also try MenuOpened on the app element itself.
+        if AXObserverAddNotification(obs, appEl, kAXMenuOpenedNotification as CFString, refcon) == .success {
+            registered.append(appEl)
+        }
+
+        if mbResult == .success, let menuBarValue = menuBarRef {
+            let menuBarEl = menuBarValue as! AXUIElement
+            // Discovery: register MenuOpened and SelectedChildrenChanged at
+            // every plausible level so the [AX] diagnostic line in the callback
+            // tells us which fires. Once we know, we can drop the others.
+            let menuBarItems = Self.axChildren(of: menuBarEl)
+            let openedNote = kAXMenuOpenedNotification as CFString
+            let closedNote = kAXMenuClosedNotification as CFString
+            let selChildNote = kAXSelectedChildrenChangedNotification as CFString
+            let beforeOpenRegs = registered.count
+            // Level: menu bar itself
+            if AXObserverAddNotification(obs, menuBarEl, openedNote, refcon) == .success {
+                registered.append(menuBarEl)
+            }
+            if AXObserverAddNotification(obs, menuBarEl, selChildNote, refcon) == .success {
+                registered.append(menuBarEl)
+            }
+            for item in menuBarItems {
+                // Level: each AXMenu (the dropdown under a bar item). AXMenu
+                // accepts MenuOpened, MenuClosed, and SelectedChildrenChanged.
+                for menu in Self.axChildren(of: item) {
+                    if AXObserverAddNotification(obs, menu, openedNote, refcon) == .success {
+                        registered.append(menu)
+                    }
+                    if AXObserverAddNotification(obs, menu, closedNote, refcon) == .success {
+                        registered.append(menu)
+                    }
+                    if AXObserverAddNotification(obs, menu, selChildNote, refcon) == .success {
+                        registered.append(menu)
+                    }
+                }
+            }
+            SemanticLogger.shared.log("AXObserver: \(menuBarItems.count) menu bar items → \(registered.count - beforeOpenRegs) discovery watchers")
+        } else {
+            SemanticLogger.shared.log("AXObserver: no menu bar for \(app.localizedName ?? "pid:\(pid)")")
+        }
+
+        guard !registered.isEmpty else { return }
 
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .commonModes)
         observer = obs
         observedPID = pid
-        SemanticLogger.shared.log("AXObserver → \(app.localizedName ?? "pid:\(pid)")")
+        observedElements = registered
+        SemanticLogger.shared.log("AXObserver → \(app.localizedName ?? "pid:\(pid)") (\(registered.count) total)")
     }
 
     private func detach() {
         guard let obs = observer, observedPID != 0 else { return }
-        let appEl = AXUIElementCreateApplication(observedPID)
-        AXObserverRemoveNotification(obs, appEl, kAXMenuItemSelectedNotification as CFString)
+        let notes = [
+            kAXMenuItemSelectedNotification as CFString,
+            kAXMenuOpenedNotification as CFString,
+            kAXMenuClosedNotification as CFString,
+            kAXSelectedChildrenChangedNotification as CFString,
+        ]
+        for el in observedElements {
+            for note in notes {
+                AXObserverRemoveNotification(obs, el, note)
+            }
+        }
         CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .commonModes)
         observer = nil
         observedPID = 0
+        observedElements = []
     }
 
     // MARK: - Notification handler
@@ -84,8 +178,63 @@ final class AXObserverManager {
             return
         }
 
+        if KeyboardSuppressor.shared.shouldSuppress(action.shortcut) {
+            SemanticLogger.shared.log("Suppressed (keyboard-fired): \"\(title)\" → \(action.shortcut) [\(bundleID)]")
+            return
+        }
+
         SemanticLogger.shared.log("Menu: \"\(title)\" → \(action.shortcut) [\(bundleID)]")
         OverlayPanel.shared.show(action: action)
+    }
+
+    // AXMenu's children are lazy: they materialize when the menu opens.
+    // On every MenuOpened we (re-)register MenuItemSelected on each item and
+    // MenuOpened on each sub-menu. Re-registrations return
+    // kAXErrorNotificationAlreadyRegistered, which we treat as a no-op.
+    fileprivate func handleMenuOpened(_ menu: AXUIElement) {
+        guard let obs = observer else { return }
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        let selected = kAXMenuItemSelectedNotification as CFString
+        let opened = kAXMenuOpenedNotification as CFString
+
+        var newItemRegs = 0
+        var newSubMenuRegs = 0
+        for item in Self.axChildren(of: menu) {
+            if AXObserverAddNotification(obs, item, selected, refcon) == .success {
+                observedElements.append(item)
+                newItemRegs += 1
+            }
+            for subMenu in Self.axChildren(of: item) {
+                if AXObserverAddNotification(obs, subMenu, opened, refcon) == .success {
+                    observedElements.append(subMenu)
+                    newSubMenuRegs += 1
+                }
+            }
+        }
+        if newItemRegs > 0 || newSubMenuRegs > 0 {
+            SemanticLogger.shared.log("MenuOpened → +\(newItemRegs) item watchers, +\(newSubMenuRegs) sub-menu watchers")
+        }
+    }
+
+    // Reads the menu's currently-highlighted item and caches it. The cache
+    // is consulted on MenuClosed to decide whether a click happened.
+    fileprivate func handleSelectedChildrenChanged(_ menu: AXUIElement) {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(menu, kAXSelectedChildrenAttribute as CFString, &ref) == .success,
+              let array = ref as? [AnyObject], !array.isEmpty else { return }
+        lastHighlightedItem = (array[0] as! AXUIElement)
+        lastHighlightedAt = Date()
+    }
+
+    // If the highlight was set very recently (≤150 ms), the close is almost
+    // certainly because the user clicked the highlighted item. Outside that
+    // window, treat the close as a dismissal and do nothing.
+    fileprivate func handleMenuClosed(_ menu: AXUIElement) {
+        defer { lastHighlightedItem = nil; lastHighlightedAt = nil }
+        guard let item = lastHighlightedItem,
+              let at = lastHighlightedAt,
+              Date().timeIntervalSince(at) <= 0.15 else { return }
+        handleMenuItemSelected(item)
     }
 }
 
@@ -98,7 +247,17 @@ private func axCallback(
 ) {
     guard let refcon else { return }
     let mgr = Unmanaged<AXObserverManager>.fromOpaque(refcon).takeUnretainedValue()
-    if notification as String == kAXMenuItemSelectedNotification as String {
+    SemanticLogger.shared.log("[AX] \(notification as String) ← \(AXObserverManager.describe(element))")
+    switch notification as String {
+    case kAXMenuItemSelectedNotification as String:
         mgr.handleMenuItemSelected(element)
+    case kAXMenuOpenedNotification as String:
+        mgr.handleMenuOpened(element)
+    case kAXSelectedChildrenChangedNotification as String:
+        mgr.handleSelectedChildrenChanged(element)
+    case kAXMenuClosedNotification as String:
+        mgr.handleMenuClosed(element)
+    default:
+        break
     }
 }

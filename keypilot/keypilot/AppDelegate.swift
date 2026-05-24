@@ -4,7 +4,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private let permissionManager = PermissionManager()
     private var eventTapManager: EventTapManager?
-    private var axObserverManager: AXObserverManager?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildStatusMenu()
@@ -35,10 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SemanticLogger.shared.log("Permissions granted — starting observers")
 
         eventTapManager = EventTapManager()
-        axObserverManager = AXObserverManager()
-
         eventTapManager?.start()
-        axObserverManager?.start()
     }
 
     // MARK: - Menu actions

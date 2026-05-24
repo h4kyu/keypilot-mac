@@ -64,6 +64,65 @@ final class EventTapManager {
             SemanticLogger.shared.log("Shortcut adopted: \(label)")
         }
     }
+
+    // Hit-test what's under the cursor. If it's a menu item, treat the
+    // click as the user invoking that command and run it through the
+    // shortcut pipeline. Most mouse-ups land on non-menu UI and bail at
+    // the role check in microseconds.
+    fileprivate func handleMouseUp(_ event: CGEvent) {
+        let pos = event.location
+        let sysWide = AXUIElementCreateSystemWide()
+        var elementRef: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(sysWide, Float(pos.x), Float(pos.y), &elementRef) == .success,
+              let element = elementRef else { return }
+
+        var roleRef: AnyObject?
+        AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef)
+        guard let role = roleRef as? String, role == (kAXMenuItemRole as String) else { return }
+
+        var titleRef: AnyObject?
+        AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &titleRef)
+        let title = (titleRef as? String) ?? ""
+
+        var cmdCharRef: AnyObject?
+        AXUIElementCopyAttributeValue(element, kAXMenuItemCmdCharAttribute as CFString, &cmdCharRef)
+        let cmdChar = (cmdCharRef as? String) ?? ""
+
+        var cmdModRef: AnyObject?
+        AXUIElementCopyAttributeValue(element, kAXMenuItemCmdModifiersAttribute as CFString, &cmdModRef)
+        let modifiers = (cmdModRef as? Int) ?? 0
+
+        let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+
+        guard let action = ShortcutResolver.resolve(
+            cmdChar: cmdChar, modifiers: modifiers, bundleID: bundleID, menuTitle: title
+        ) else {
+            if !title.isEmpty {
+                SemanticLogger.shared.log("Click: \"\(title)\" (no shortcut)")
+            }
+            return
+        }
+
+        if KeyboardSuppressor.shared.shouldSuppress(action.shortcut) {
+            SemanticLogger.shared.log("Suppressed (recent keypress): \"\(title)\" → \(action.shortcut)")
+            return
+        }
+
+        SemanticLogger.shared.log("Click: \"\(title)\" → \(action.shortcut) [\(bundleID)]")
+        OverlayPanel.shared.show(action: action)
+    }
+
+    // Layout-respecting character for the pressed key. With ⌘ held,
+    // CGEvent still reports the layout-correct character (e.g. "C" on
+    // US QWERTY, "I" on Dvorak for the same physical key).
+    private static func character(from event: CGEvent) -> String {
+        var length = 0
+        var chars = [UniChar](repeating: 0, count: 4)
+        event.keyboardGetUnicodeString(maxStringLength: 4,
+                                       actualStringLength: &length,
+                                       unicodeString: &chars)
+        return String(utf16CodeUnits: chars, count: length)
+    }
 }
 
 // C function bridging to the class instance
@@ -73,8 +132,12 @@ private func eventTapCallback(
     event: CGEvent,
     refcon: UnsafeMutableRawPointer?
 ) -> Unmanaged<CGEvent>? {
-    guard type == .keyDown, let refcon else { return Unmanaged.passUnretained(event) }
+    guard let refcon else { return Unmanaged.passUnretained(event) }
     let mgr = Unmanaged<EventTapManager>.fromOpaque(refcon).takeUnretainedValue()
-    mgr.handleKeyDown(event)
+    switch type {
+    case .keyDown:       mgr.handleKeyDown(event)
+    case .leftMouseUp:   mgr.handleMouseUp(event)
+    default:             break
+    }
     return Unmanaged.passUnretained(event)
 }
