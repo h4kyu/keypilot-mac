@@ -46,6 +46,8 @@ enum ShortcutResolver {
         "Quit": "⌘Q",
         "Hide": "⌘H",
         "Minimize": "⌘M",
+        "Preferences": "⌘,",
+        "Settings": "⌘,",
     ]
 
     // Strip trailing ellipsis ("…" or "...") and surrounding whitespace so

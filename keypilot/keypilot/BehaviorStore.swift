@@ -7,6 +7,7 @@ struct BehaviorRecord: Codable {
     var menuTitle: String
     var mouseCount: Int = 0
     var keyboardCount: Int = 0
+    var mouseSinceKeyboard: Int = 0
     var lastShownAt: Date?
     var state: State = .active
 
@@ -20,7 +21,7 @@ final class BehaviorStore {
     static let shared = BehaviorStore()
 
     // Thresholds drawn from CLAUDE.md suppression spec.
-    private let showAfterMouseCount = 1
+    private let showAfterMouseCount = 2
     private let cooldownSeconds: TimeInterval = 30
     private let learnedThreshold = 3
 
@@ -73,6 +74,16 @@ final class BehaviorStore {
         var rec = records[k] ?? BehaviorRecord(bundleID: bundleID, shortcut: shortcut, menuTitle: menuTitle)
         rec.menuTitle = menuTitle
         rec.mouseCount += 1
+        rec.mouseSinceKeyboard += 1
+
+        // Regression: 3 mouse uses in a row with no keyboard use in between
+        // means the user has drifted back from the shortcut. Flip back to
+        // .active so this same click can coach them again.
+        if rec.state == .learned && rec.mouseSinceKeyboard >= 3 {
+            rec.state = .active
+            rec.keyboardCount = 0
+            SemanticLogger.shared.log("Regressed: \(shortcut) [\(bundleID)] — resuming coaching")
+        }
 
         let shouldShow: Bool = {
             if rec.state == .learned { return false }
@@ -97,6 +108,7 @@ final class BehaviorStore {
         let k = key(bundleID, shortcut)
         var rec = records[k] ?? BehaviorRecord(bundleID: bundleID, shortcut: shortcut, menuTitle: "")
         rec.keyboardCount += 1
+        rec.mouseSinceKeyboard = 0
         if rec.state == .active && rec.keyboardCount >= learnedThreshold {
             rec.state = .learned
             SemanticLogger.shared.log("Learned: \(shortcut) [\(bundleID)] — retiring hint")
