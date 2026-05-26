@@ -87,6 +87,11 @@ final class EventTapManager {
             return
         }
 
+        if SnoozeManager.shared.isSnoozed {
+            SemanticLogger.shared.log("Snoozed: \"\(title)\" → \(action.shortcut)")
+            return
+        }
+
         let shouldShow = BehaviorStore.shared.recordMouseInvocation(
             bundleID: bundleID, shortcut: action.shortcut, menuTitle: title
         )
