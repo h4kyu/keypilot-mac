@@ -231,6 +231,12 @@ Cooldown:
 Retire hint after:
 - User performs shortcut successfully 3 times
 
+Re-activate hint after:
+- A .learned hint sees mouse use again without recent keyboard use
+  (e.g. no keyboard invocation in the last 30 days). Flip back to
+  .active and resume coaching. Catches the user who learned a
+  shortcut, then drifted back to the mouse over time.
+
 Snooze:
 - 1 hour
 - Today
@@ -336,6 +342,7 @@ Implement:
 - local action store
 - suppression rules v1
   - Suppress menu-driven hints when the same shortcut was just pressed via keyboard within a short window (~150 ms). The AX `MenuItemSelected` notification fires on shortcut invocation as well as on mouse selection, so the invocation source must be attributed by correlating with the event tap before showing a hint.
+  - Re-activate retired hints when a `.learned` record sees mouse use without recent keyboard use (regression). Implemented alongside retirement on the per-(app, shortcut) record.
 
 Support:
 
