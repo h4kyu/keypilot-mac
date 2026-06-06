@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var statusLineItem: NSMenuItem?
     private var resumeItem: NSMenuItem?
+    private var appToggleItem: NSMenuItem?
     private var learnedShortcutsController: LearnedShortcutsWindowController?
     private var preferencesController: PreferencesWindowController?
 
@@ -47,6 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(resume)
         resumeItem = resume
 
+        let appToggle = NSMenuItem(title: "Disable for this app", action: #selector(toggleCurrentApp), keyEquivalent: "")
+        menu.addItem(appToggle)
+        appToggleItem = appToggle
+
         menu.addItem(.separator())
         menu.addItem(withTitle: "Learned Shortcuts…", action: #selector(openLearnedShortcuts), keyEquivalent: "")
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: "")
@@ -71,6 +76,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             statusLineItem?.title = "Keypilot: On"
             resumeItem?.isEnabled = false
         }
+
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        let bundleID = frontmost?.bundleIdentifier ?? ""
+        let isSelf = bundleID == Bundle.main.bundleIdentifier || bundleID.isEmpty
+        if isSelf {
+            appToggleItem?.title = "Disable for this app"
+            appToggleItem?.isEnabled = false
+        } else {
+            let name = frontmost?.localizedName ?? "This App"
+            let excluded = AppExclusionStore.shared.isExcluded(bundleID)
+            appToggleItem?.title = excluded ? "Enable for \(name)" : "Disable for \(name)"
+            appToggleItem?.isEnabled = true
+        }
     }
 
     // MARK: - Observers
@@ -83,6 +101,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     // MARK: - Menu actions
+
+    @objc private func toggleCurrentApp() {
+        guard let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else { return }
+        AppExclusionStore.shared.toggle(bundleID)
+    }
 
     @objc private func openLearnedShortcuts() {
         if learnedShortcutsController == nil {

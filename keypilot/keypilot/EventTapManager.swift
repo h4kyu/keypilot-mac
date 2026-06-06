@@ -45,6 +45,7 @@ final class EventTapManager {
         KeyboardSuppressor.shared.recordShortcut(shortcut)
 
         let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+        guard !AppExclusionStore.shared.isExcluded(bundleID) else { return }
         BehaviorStore.shared.recordKeyboardInvocation(bundleID: bundleID, shortcut: shortcut)
     }
 
@@ -78,6 +79,7 @@ final class EventTapManager {
         let modifiers = (cmdModRef as? Int) ?? 0
 
         let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+        guard !AppExclusionStore.shared.isExcluded(bundleID) else { return }
 
         guard let action = ShortcutResolver.resolve(
             cmdChar: cmdChar, modifiers: modifiers, bundleID: bundleID, menuTitle: title
