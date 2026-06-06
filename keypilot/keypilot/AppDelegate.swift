@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var statusLineItem: NSMenuItem?
     private var resumeItem: NSMenuItem?
+    private var learnedShortcutsController: LearnedShortcutsWindowController?
     private var preferencesController: PreferencesWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -45,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         resumeItem = resume
 
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Learned Shortcuts…", action: #selector(openLearnedShortcuts), keyEquivalent: "")
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: "")
         menu.addItem(withTitle: "Open Log…", action: #selector(openLog), keyEquivalent: "")
         menu.addItem(withTitle: "Permissions…", action: #selector(openPermissions), keyEquivalent: "")
@@ -79,6 +81,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     // MARK: - Menu actions
+
+    @objc private func openLearnedShortcuts() {
+        if learnedShortcutsController == nil {
+            learnedShortcutsController = LearnedShortcutsWindowController()
+        }
+        learnedShortcutsController?.present()
+    }
 
     @objc private func openSettings() {
         if preferencesController == nil {
