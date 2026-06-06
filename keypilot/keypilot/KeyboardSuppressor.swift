@@ -1,15 +1,8 @@
 import Foundation
 
-// Coordinates between EventTapManager and AXObserverManager.
-//
-// When the user presses ⌘C, AppKit dispatches the shortcut by firing the
-// Edit → Copy menu item, which causes AX to post kAXMenuItemSelectedNotification.
-// That looks identical to the user clicking the menu — so without this
-// coordinator, every shortcut press would also trigger a coaching overlay.
-//
-// The event tap records each ⌘-modified key down; the AX observer checks
-// here before showing a hint and skips it if a matching keyboard press
-// landed within the window.
+// When a shortcut fires its menu item, AX posts kAXMenuItemSelectedNotification —
+// indistinguishable from a mouse click. This records the keypress so the AX
+// observer can skip the redundant notification within the suppression window.
 final class KeyboardSuppressor {
     static let shared = KeyboardSuppressor()
     private init() {}
@@ -17,9 +10,8 @@ final class KeyboardSuppressor {
     private var lastShortcut: String?
     private var lastAt: Date?
 
-    // 150 ms: AppKit's menu dispatch from a shortcut is effectively
-    // instant, but AX notifications can lag a frame or two. Short enough
-    // that a deliberate mouse click following the shortcut isn't swallowed.
+    // 150 ms: long enough for AX to lag a frame or two after dispatch, short
+    // enough that a deliberate mouse click after the shortcut isn't swallowed.
     private let window: TimeInterval = 0.15
 
     func recordShortcut(_ display: String) {

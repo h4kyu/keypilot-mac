@@ -15,7 +15,6 @@ final class SemanticLogger {
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         logFileURL = support.appendingPathComponent("semantic.log")
 
-        // Open (or create) the file and keep a handle for efficient appends.
         if !FileManager.default.fileExists(atPath: logFileURL.path) {
             FileManager.default.createFile(atPath: logFileURL.path, contents: nil)
         }

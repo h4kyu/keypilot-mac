@@ -2,16 +2,14 @@ import Foundation
 import CoreGraphics
 
 struct SemanticAction {
-    let menuTitle: String   // e.g. "Copy"
-    let shortcut: String    // e.g. "⌘C"
+    let menuTitle: String
+    let shortcut: String
     let bundleID: String
 }
 
 enum ShortcutResolver {
-    // kAXMenuItemCmdModifiers values (Carbon HI Toolbox bitmask):
-    //   0 = ⌘ only   1 = ⇧   2 = ⌥   4 = ⌃   8 = no ⌘ (function key)
+    // kAXMenuItemCmdModifiers bitmask: 0=⌘ only, 1=⇧, 2=⌥, 4=⌃, 8=no ⌘ (fn key)
     static func resolve(cmdChar: String, modifiers: Int, bundleID: String, menuTitle: String) -> SemanticAction? {
-        // Primary: shortcut metadata exposed on the menu item itself.
         if !cmdChar.isEmpty, modifiers & 8 == 0 {
             var prefix = ""
             if modifiers & 4 != 0 { prefix += "⌃" }
@@ -21,9 +19,6 @@ enum ShortcutResolver {
             return SemanticAction(menuTitle: menuTitle, shortcut: shortcut, bundleID: bundleID)
         }
 
-        // Fallback: context menus typically don't carry cmdChar even when
-        // the same action has a well-known shortcut elsewhere. Look up the
-        // v1 universal commands by title.
         if let shortcut = commonShortcutsByTitle[normalize(menuTitle)] {
             return SemanticAction(menuTitle: menuTitle, shortcut: shortcut, bundleID: bundleID)
         }
@@ -50,8 +45,13 @@ enum ShortcutResolver {
         "Settings": "⌘,",
     ]
 
-    // Strip trailing ellipsis ("…" or "...") and surrounding whitespace so
-    // "Find…" and "Find" map to the same table entry.
+    static func titleForShortcut(_ shortcut: String) -> String? {
+        for (title, sc) in commonShortcutsByTitle where sc == shortcut {
+            return title
+        }
+        return nil
+    }
+
     private static func normalize(_ title: String) -> String {
         var t = title.trimmingCharacters(in: .whitespaces)
         if t.hasSuffix("…") { t = String(t.dropLast()) }
@@ -59,9 +59,6 @@ enum ShortcutResolver {
         return t.trimmingCharacters(in: .whitespaces)
     }
 
-    // Mirror of `resolve(...)` for the event-tap side. Returns the same
-    // "⌘⇧Z" form so KeyboardSuppressor can string-compare across sources.
-    // nil when ⌘ isn't held or the character is empty.
     static func format(cgFlags: CGEventFlags, char: String) -> String? {
         guard cgFlags.contains(.maskCommand), !char.isEmpty else { return nil }
 
@@ -73,6 +70,3 @@ enum ShortcutResolver {
         return prefix + "⌘" + char.uppercased()
     }
 }
-
-
-

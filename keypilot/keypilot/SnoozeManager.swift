@@ -10,7 +10,7 @@ enum SnoozeDuration {
         case .oneHour:
             return Date().addingTimeInterval(3600)
         case .today:
-            // Next local midnight, so "today" expires when the calendar day does.
+            // startOfDay(+1 day) rather than +86400 so it expires at midnight, not 24h from now.
             let cal = Calendar.current
             return cal.startOfDay(for: Date().addingTimeInterval(86400))
         case .thisWeek:

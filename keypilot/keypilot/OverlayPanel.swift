@@ -8,13 +8,10 @@ final class OverlayPanel {
     private var hideTimer: Timer?
 
     func show(action: SemanticAction) {
-        // Always dispatched to main — callers may be on a background queue.
         DispatchQueue.main.async { [weak self] in
             self?.present(action)
         }
     }
-
-    // MARK: - Private
 
     private func present(_ action: SemanticAction) {
         hideTimer?.invalidate()

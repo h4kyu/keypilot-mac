@@ -2,8 +2,6 @@ import AppKit
 import ApplicationServices
 import CoreGraphics
 
-// Listens for keyboard events (shortcut adoption) and mouse-up events
-// (UI hit-testing). Uses a listen-only tap so it never blocks or modifies.
 final class EventTapManager {
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -44,10 +42,6 @@ final class EventTapManager {
         BehaviorStore.shared.recordKeyboardInvocation(bundleID: bundleID, shortcut: shortcut)
     }
 
-    // Hit-test what's under the cursor. If it's a menu item, treat the
-    // click as the user invoking that command and run it through the
-    // shortcut pipeline. Most mouse-ups land on non-menu UI and bail at
-    // the role check in microseconds.
     fileprivate func handleMouseUp(_ event: CGEvent) {
         let pos = event.location
         let sysWide = AXUIElementCreateSystemWide()
@@ -58,6 +52,12 @@ final class EventTapManager {
         var roleRef: AnyObject?
         AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef)
         guard let role = roleRef as? String, role == (kAXMenuItemRole as String) else { return }
+
+        // AXUIElementGetPid is more reliable than frontmostApplication here — the
+        // frontmost app is racy while a status menu is open.
+        var ownerPID: pid_t = 0
+        AXUIElementGetPid(element, &ownerPID)
+        if ownerPID == getpid() { return }
 
         var titleRef: AnyObject?
         AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &titleRef)
@@ -103,9 +103,6 @@ final class EventTapManager {
         }
     }
 
-    // Layout-respecting character for the pressed key. With ⌘ held,
-    // CGEvent still reports the layout-correct character (e.g. "C" on
-    // US QWERTY, "I" on Dvorak for the same physical key).
     private static func character(from event: CGEvent) -> String {
         var length = 0
         var chars = [UniChar](repeating: 0, count: 4)
@@ -116,7 +113,6 @@ final class EventTapManager {
     }
 }
 
-// C function bridging to the class instance
 private func eventTapCallback(
     proxy: CGEventTapProxy,
     type: CGEventType,

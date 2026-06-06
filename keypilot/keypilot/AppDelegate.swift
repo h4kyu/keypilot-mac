@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var statusLineItem: NSMenuItem?
     private var resumeItem: NSMenuItem?
+    private var preferencesController: PreferencesWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildStatusMenu()
@@ -44,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         resumeItem = resume
 
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: "")
         menu.addItem(withTitle: "Open Log…", action: #selector(openLog), keyEquivalent: "")
         menu.addItem(withTitle: "Permissions…", action: #selector(openPermissions), keyEquivalent: "")
         menu.addItem(.separator())
@@ -77,6 +79,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     // MARK: - Menu actions
+
+    @objc private func openSettings() {
+        if preferencesController == nil {
+            preferencesController = PreferencesWindowController()
+        }
+        preferencesController?.present()
+    }
 
     @objc private func openLog() {
         NSWorkspace.shared.open(SemanticLogger.shared.logFileURL)
