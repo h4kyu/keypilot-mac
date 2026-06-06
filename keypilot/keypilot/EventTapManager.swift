@@ -31,6 +31,12 @@ final class EventTapManager {
         SemanticLogger.shared.log("EventTap started (listen-only)")
     }
 
+    fileprivate func reEnable() {
+        guard let tap else { return }
+        CGEvent.tapEnable(tap: tap, enable: true)
+        SemanticLogger.shared.log("EventTap re-enabled after timeout")
+    }
+
     fileprivate func handleKeyDown(_ event: CGEvent) {
         let flags = event.flags
         guard flags.contains(.maskCommand) else { return }
@@ -122,9 +128,11 @@ private func eventTapCallback(
     guard let refcon else { return Unmanaged.passUnretained(event) }
     let mgr = Unmanaged<EventTapManager>.fromOpaque(refcon).takeUnretainedValue()
     switch type {
-    case .keyDown:       mgr.handleKeyDown(event)
-    case .leftMouseUp:   mgr.handleMouseUp(event)
-    default:             break
+    case .keyDown:                  mgr.handleKeyDown(event)
+    case .leftMouseUp:              mgr.handleMouseUp(event)
+    case .tapDisabledByTimeout,
+         .tapDisabledByUserInput:   mgr.reEnable()
+    default:                        break
     }
     return Unmanaged.passUnretained(event)
 }
