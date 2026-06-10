@@ -9,6 +9,7 @@ final class EventTapManager {
     private let windowControlDetector = WindowControlDetector()
     private let dockDetector = DockAndAppSwitchDetector()
     private let dialogDetector = DialogNavigationDetector()
+    private let browserDetector = BrowserChromeDetector()
 
     func start() {
         let mask: CGEventMask =
@@ -93,6 +94,7 @@ final class EventTapManager {
             action = windowControlDetector.handle(element: element, role: role, bundleID: bundleID)
                   ?? dockDetector.handle(element: element, role: role)
                   ?? dialogDetector.handle(element: element, role: role, bundleID: bundleID)
+                  ?? browserDetector.handle(element: element, role: role, bundleID: bundleID)
         }
 
         guard let action else { return }
