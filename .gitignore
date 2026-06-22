@@ -48,3 +48,6 @@ playground.xcworkspace
 
 # Logs / local
 *.log
+
+# Claude Code
+CLAUDE.md

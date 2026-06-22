@@ -17,8 +17,30 @@ final class BrowserChromeDetector {
 
     func handle(element: AXUIElement, role: String, bundleID: String) -> SemanticAction? {
         guard Self.knownBrowsers.contains(bundleID) else { return nil }
+        if role == "AXGroup" && isOutsideWebContent(element) {
+            let childRoles = childRoleList(element)
+            let desc = axDescription(element)
+            SemanticLogger.shared.log("BrowserGroup: desc=\"\(desc)\" children=[\(childRoles)]")
+        }
         guard isAddressBar(element: element, role: role) else { return nil }
         return SemanticAction(menuTitle: "Address Bar", shortcut: "⌘L", bundleID: bundleID)
+    }
+
+    private func childRoleList(_ element: AXUIElement) -> String {
+        var ref: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &ref) == .success,
+              let children = ref as? [AXUIElement] else { return "" }
+        return children.compactMap { child -> String? in
+            var r: AnyObject?
+            AXUIElementCopyAttributeValue(child, kAXRoleAttribute as CFString, &r)
+            return r as? String
+        }.joined(separator: ", ")
+    }
+
+    private func axDescription(_ element: AXUIElement) -> String {
+        var ref: AnyObject?
+        AXUIElementCopyAttributeValue(element, kAXDescriptionAttribute as CFString, &ref)
+        return (ref as? String) ?? ""
     }
 
     private func isAddressBar(element: AXUIElement, role: String) -> Bool {

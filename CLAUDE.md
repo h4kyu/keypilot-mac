@@ -1,3 +1,19 @@
+## Canary
+
+Begin every response with the block below, copied verbatim **including the
+code fence** (the fence is required so markdown does not collapse the four
+lines into one). Preserve all whitespace: two spaces between `(•ө•)` and `♪`,
+and the leading space on lines 1 and 4.
+
+````
+```
+ ,_
+(•ө•)  ♪
+/)__)
+ " "
+```
+````
+
 ## Collaboration rules
 
 Before adding or modifying any segment of code, explain in plain language what that segment does and why it is being added. Each distinct segment (a function, a method, a meaningful block, a new file's purpose) gets its own short explanation before the code is written. Do not batch multiple segments under one vague explanation, and do not write code first and explain after.
