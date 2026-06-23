@@ -17,28 +17,29 @@ final class BrowserChromeDetector {
 
     func handle(element: AXUIElement, role: String, bundleID: String) -> SemanticAction? {
         guard Self.knownBrowsers.contains(bundleID) else { return nil }
-        if role == "AXGroup" && isOutsideWebContent(element) {
-            let childRoles = childRoleList(element)
-            let desc = axDescription(element)
-            SemanticLogger.shared.log("BrowserGroup: desc=\"\(desc)\" children=[\(childRoles)]")
+        if isNewTabButton(element: element, role: role) {
+            return SemanticAction(menuTitle: "New Tab", shortcut: "⌘T", bundleID: bundleID)
         }
         guard isAddressBar(element: element, role: role) else { return nil }
         return SemanticAction(menuTitle: "Address Bar", shortcut: "⌘L", bundleID: bundleID)
     }
 
-    private func childRoleList(_ element: AXUIElement) -> String {
-        var ref: AnyObject?
-        guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &ref) == .success,
-              let children = ref as? [AXUIElement] else { return "" }
-        return children.compactMap { child -> String? in
-            var r: AnyObject?
-            AXUIElementCopyAttributeValue(child, kAXRoleAttribute as CFString, &r)
-            return r as? String
-        }.joined(separator: ", ")
+    private static let newTabButtonLabels: Set<String> = [
+        "New Tab",          // Safari, Chrome, Edge, Brave
+        "Open a new tab",   // Firefox
+    ]
+
+    private func isNewTabButton(element: AXUIElement, role: String) -> Bool {
+        guard role == "AXButton" else { return false }
+        guard isOutsideWebContent(element) else { return false }
+        return Self.newTabButtonLabels.contains(axLabel(element))
     }
 
-    private func axDescription(_ element: AXUIElement) -> String {
+    // Reads title then description — browsers vary on which attribute carries the button label.
+    private func axLabel(_ element: AXUIElement) -> String {
         var ref: AnyObject?
+        if AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &ref) == .success,
+           let s = ref as? String, !s.isEmpty { return s }
         AXUIElementCopyAttributeValue(element, kAXDescriptionAttribute as CFString, &ref)
         return (ref as? String) ?? ""
     }
