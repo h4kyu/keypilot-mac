@@ -12,8 +12,15 @@ final class EventTapManager {
     private let browserDetector = BrowserChromeDetector()
 
     func start() {
+        browserDetector.onDetected = { [weak self] action in
+            guard let self else { return }
+            guard !AppExclusionStore.shared.isExcluded(action.bundleID) else { return }
+            self.dispatchAction(action)
+        }
+
         let mask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) |
+            (1 << CGEventType.leftMouseDown.rawValue) |
             (1 << CGEventType.leftMouseUp.rawValue)
 
         guard let tap = CGEvent.tapCreate(
@@ -70,6 +77,25 @@ final class EventTapManager {
         BehaviorStore.shared.recordKeyboardInvocation(bundleID: bundleID, shortcut: shortcut)
     }
 
+    fileprivate func handleMouseDown(_ event: CGEvent) {
+        let pos = event.location
+        let sysWide = AXUIElementCreateSystemWide()
+        var elementRef: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(sysWide, Float(pos.x), Float(pos.y), &elementRef) == .success,
+              let element = elementRef else { return }
+
+        var ownerPID: pid_t = 0
+        AXUIElementGetPid(element, &ownerPID)
+        if ownerPID == getpid() { return }
+
+        var roleRef: AnyObject?
+        AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef)
+        let role = (roleRef as? String) ?? ""
+
+        let bundleID = NSRunningApplication(processIdentifier: ownerPID)?.bundleIdentifier ?? ""
+        browserDetector.handleMouseDown(element: element, role: role, bundleID: bundleID)
+    }
+
     fileprivate func handleMouseUp(_ event: CGEvent) {
         let pos = event.location
         let sysWide = AXUIElementCreateSystemWide()
@@ -94,7 +120,7 @@ final class EventTapManager {
             action = windowControlDetector.handle(element: element, role: role, bundleID: bundleID)
                   ?? dockDetector.handle(element: element, role: role)
                   ?? dialogDetector.handle(element: element, role: role, bundleID: bundleID)
-                  ?? browserDetector.handle(element: element, role: role, bundleID: bundleID)
+                  ?? browserDetector.handle(element: element, role: role, bundleID: bundleID, clickAt: pos)
         }
 
         guard let action else { return }
@@ -170,6 +196,7 @@ private func eventTapCallback(
     let mgr = Unmanaged<EventTapManager>.fromOpaque(refcon).takeUnretainedValue()
     switch type {
     case .keyDown:                  mgr.handleKeyDown(event)
+    case .leftMouseDown:            mgr.handleMouseDown(event)
     case .leftMouseUp:              mgr.handleMouseUp(event)
     case .tapDisabledByTimeout,
          .tapDisabledByUserInput:   mgr.reEnable()

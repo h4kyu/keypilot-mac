@@ -15,13 +15,27 @@ final class BrowserChromeDetector {
         "org.mozilla.firefox",
     ]
 
-    func handle(element: AXUIElement, role: String, bundleID: String) -> SemanticAction? {
+    // Wired up by EventTapManager to feed async tab-close detections into dispatchAction.
+    var onDetected: ((SemanticAction) -> Void)?
+
+    func handle(element: AXUIElement, role: String, bundleID: String, clickAt: CGPoint) -> SemanticAction? {
         guard Self.knownBrowsers.contains(bundleID) else { return nil }
         if isNewTabButton(element: element, role: role) {
             return SemanticAction(menuTitle: "New Tab", shortcut: "⌘T", bundleID: bundleID)
         }
         guard isAddressBar(element: element, role: role) else { return nil }
         return SemanticAction(menuTitle: "Address Bar", shortcut: "⌘L", bundleID: bundleID)
+    }
+
+    // On mouseDown, AX hit-tests the actual AXButton directly (unlike mouseUp where the tab
+    // is already gone). Check the label here and fire immediately — no async counting needed.
+    func handleMouseDown(element: AXUIElement, role: String, bundleID: String) {
+        guard Self.knownBrowsers.contains(bundleID) else { return }
+        guard role == "AXButton" else { return }
+        let label = axLabel(element).lowercased()
+        guard label == "close tab" || label == "close" else { return }
+        guard isOutsideWebContent(element) else { return }
+        onDetected?(SemanticAction(menuTitle: "Tab Close", shortcut: "⌘W", bundleID: bundleID))
     }
 
     private static let newTabButtonLabels: Set<String> = [
