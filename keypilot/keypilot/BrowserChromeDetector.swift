@@ -33,9 +33,12 @@ final class BrowserChromeDetector {
         guard Self.knownBrowsers.contains(bundleID) else { return }
         if role == "AXButton" {
             let label = axLabel(element).lowercased()
-            guard label == "close tab" || label == "close" else { return }
             guard isOutsideWebContent(element) else { return }
-            onDetected?(SemanticAction(menuTitle: "Tab Close", shortcut: "⌘W", bundleID: bundleID))
+            if label == "close tab" || label == "close" {
+                onDetected?(SemanticAction(menuTitle: "Tab Close", shortcut: "⌘W", bundleID: bundleID))
+            } else if Self.reloadButtonLabels.contains(label) {
+                onDetected?(SemanticAction(menuTitle: "Reload", shortcut: "⌘R", bundleID: bundleID))
+            }
             return
         }
         // Chrome/Chromium: the tab strip returns AXGroup with an empty label. The × button
@@ -68,6 +71,14 @@ final class BrowserChromeDetector {
         guard isOutsideWebContent(element) else { return false }
         return Self.newTabButtonLabels.contains(axLabel(element))
     }
+
+    private static let reloadButtonLabels: Set<String> = [
+        "reload page",          // Chrome, Edge
+        "reload this page",     // Safari
+        "reload",               // Chrome (older), Brave
+        "reload current page",  // Firefox
+        "reload tab",           // Firefox alternate
+    ]
 
     // Reads title then description — browsers vary on which attribute carries the button label.
     private func axLabel(_ element: AXUIElement) -> String {
