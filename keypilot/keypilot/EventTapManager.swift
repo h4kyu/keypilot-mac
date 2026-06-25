@@ -93,7 +93,7 @@ final class EventTapManager {
         let role = (roleRef as? String) ?? ""
 
         let bundleID = NSRunningApplication(processIdentifier: ownerPID)?.bundleIdentifier ?? ""
-        browserDetector.handleMouseDown(element: element, role: role, bundleID: bundleID)
+        browserDetector.handleMouseDown(element: element, role: role, bundleID: bundleID, clickAt: pos)
     }
 
     fileprivate func handleMouseUp(_ event: CGEvent) {

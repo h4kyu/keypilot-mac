@@ -29,13 +29,33 @@ final class BrowserChromeDetector {
 
     // On mouseDown, AX hit-tests the actual AXButton directly (unlike mouseUp where the tab
     // is already gone). Check the label here and fire immediately — no async counting needed.
-    func handleMouseDown(element: AXUIElement, role: String, bundleID: String) {
+    func handleMouseDown(element: AXUIElement, role: String, bundleID: String, clickAt: CGPoint) {
         guard Self.knownBrowsers.contains(bundleID) else { return }
-        guard role == "AXButton" else { return }
-        let label = axLabel(element).lowercased()
-        guard label == "close tab" || label == "close" else { return }
-        guard isOutsideWebContent(element) else { return }
-        onDetected?(SemanticAction(menuTitle: "Tab Close", shortcut: "⌘W", bundleID: bundleID))
+        if role == "AXButton" {
+            let label = axLabel(element).lowercased()
+            guard label == "close tab" || label == "close" else { return }
+            guard isOutsideWebContent(element) else { return }
+            onDetected?(SemanticAction(menuTitle: "Tab Close", shortcut: "⌘W", bundleID: bundleID))
+            return
+        }
+        // Chrome/Chromium: the tab strip returns AXGroup with an empty label. The × button
+        // is always within the rightmost ~40px of the frame — clicking elsewhere in the strip
+        // (to switch tabs) lands toward the center, so the right-edge threshold is reliable.
+        if role == "AXGroup" && axLabel(element).isEmpty && isOutsideWebContent(element) && !hasTextInputChild(element) {
+            if let frame = axFrame(element), frame.contains(clickAt), frame.maxX - clickAt.x <= 40 {
+                onDetected?(SemanticAction(menuTitle: "Tab Close", shortcut: "⌘W", bundleID: bundleID))
+            }
+        }
+    }
+
+    private func axFrame(_ element: AXUIElement) -> CGRect? {
+        var ref: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, "AXFrame" as CFString, &ref) == .success,
+              ref != nil else { return nil }
+        let axVal = ref as! AXValue
+        var rect = CGRect.zero
+        guard AXValueGetValue(axVal, .cgRect, &rect) else { return nil }
+        return rect
     }
 
     private static let newTabButtonLabels: Set<String> = [
