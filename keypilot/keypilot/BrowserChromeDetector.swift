@@ -15,7 +15,6 @@ final class BrowserChromeDetector {
         "org.mozilla.firefox",
     ]
 
-    // Wired up by EventTapManager to feed async tab-close detections into dispatchAction.
     var onDetected: ((SemanticAction) -> Void)?
 
     func handle(element: AXUIElement, role: String, bundleID: String, clickAt: CGPoint) -> SemanticAction? {
@@ -23,14 +22,30 @@ final class BrowserChromeDetector {
         if isNewTabButton(element: element, role: role) {
             return SemanticAction(menuTitle: "New Tab", shortcut: "⌘T", bundleID: bundleID)
         }
+        if let navAction = navigationButtonAction(element: element, role: role, bundleID: bundleID) {
+            return navAction
+        }
         guard isAddressBar(element: element, role: role) else { return nil }
         return SemanticAction(menuTitle: "Address Bar", shortcut: "⌘L", bundleID: bundleID)
     }
 
-    // On mouseDown, AX hit-tests the actual AXButton directly (unlike mouseUp where the tab
-    // is already gone). Check the label here and fire immediately — no async counting needed.
+    // Disabled button means no history; coaching ⌘[/⌘] there would be wrong.
+    private func navigationButtonAction(element: AXUIElement, role: String, bundleID: String) -> SemanticAction? {
+        guard role == "AXButton", isOutsideWebContent(element), isEnabled(element) else { return nil }
+        let label = axLabel(element).lowercased()
+        if Self.backButtonLabels.contains(label) {
+            return SemanticAction(menuTitle: "Back", shortcut: "⌘[", bundleID: bundleID)
+        }
+        if Self.forwardButtonLabels.contains(label) {
+            return SemanticAction(menuTitle: "Forward", shortcut: "⌘]", bundleID: bundleID)
+        }
+        return nil
+    }
+
+    // Tab close needs mouseDown: the AX element for the tab is gone before mouseUp.
     func handleMouseDown(element: AXUIElement, role: String, bundleID: String, clickAt: CGPoint) {
         guard Self.knownBrowsers.contains(bundleID) else { return }
+        SemanticLogger.shared.log("BrowserDown: role=\(role) label=\"\(axLabel(element))\" bundleID=\(bundleID)")
         if role == "AXButton" {
             let label = axLabel(element).lowercased()
             guard isOutsideWebContent(element) else { return }
@@ -38,17 +53,24 @@ final class BrowserChromeDetector {
                 onDetected?(SemanticAction(menuTitle: "Tab Close", shortcut: "⌘W", bundleID: bundleID))
             } else if Self.reloadButtonLabels.contains(label) {
                 onDetected?(SemanticAction(menuTitle: "Reload", shortcut: "⌘R", bundleID: bundleID))
+            } else {
+                SemanticLogger.shared.log("BrowserButton[\(bundleID)]: \"\(label)\"")
             }
             return
         }
-        // Chrome/Chromium: the tab strip returns AXGroup with an empty label. The × button
-        // is always within the rightmost ~40px of the frame — clicking elsewhere in the strip
-        // (to switch tabs) lands toward the center, so the right-edge threshold is reliable.
+        // Chrome tab strip is AXGroup with empty label; × is always in the rightmost ~40px.
         if role == "AXGroup" && axLabel(element).isEmpty && isOutsideWebContent(element) && !hasTextInputChild(element) {
             if let frame = axFrame(element), frame.contains(clickAt), frame.maxX - clickAt.x <= 40 {
                 onDetected?(SemanticAction(menuTitle: "Tab Close", shortcut: "⌘W", bundleID: bundleID))
             }
         }
+    }
+
+    private func isEnabled(_ element: AXUIElement) -> Bool {
+        var ref: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, kAXEnabledAttribute as CFString, &ref) == .success,
+              let b = ref as? Bool else { return true }
+        return b
     }
 
     private func axFrame(_ element: AXUIElement) -> CGRect? {
@@ -62,8 +84,8 @@ final class BrowserChromeDetector {
     }
 
     private static let newTabButtonLabels: Set<String> = [
-        "New Tab",          // Safari, Chrome, Edge, Brave
-        "Open a new tab",   // Firefox
+        "New Tab",
+        "Open a new tab",
     ]
 
     private func isNewTabButton(element: AXUIElement, role: String) -> Bool {
@@ -73,11 +95,23 @@ final class BrowserChromeDetector {
     }
 
     private static let reloadButtonLabels: Set<String> = [
-        "reload page",          // Chrome, Edge
-        "reload this page",     // Safari
-        "reload",               // Chrome (older), Brave
-        "reload current page",  // Firefox
-        "reload tab",           // Firefox alternate
+        "reload page",
+        "reload this page",
+        "reload",
+        "reload current page",
+        "reload tab",
+    ]
+
+    private static let backButtonLabels: Set<String> = [
+        "back",
+        "go back",
+        "go back one page",
+    ]
+
+    private static let forwardButtonLabels: Set<String> = [
+        "forward",
+        "go forward",
+        "go forward one page",
     ]
 
     // Reads title then description — browsers vary on which attribute carries the button label.
@@ -112,10 +146,7 @@ final class BrowserChromeDetector {
         }
     }
 
-    // Walk up the parent chain. Web page content (Google search box, form inputs,
-    // etc.) always lives under AXWebArea. The browser address bar never does.
-    // Chromium browsers don't expose AXToolbar, so checking for AXWebArea absence
-    // is the universal signal that works across Safari, Chrome, Edge, Brave, Arc.
+    // AXWebArea is the universal boundary: browser chrome never lives under it, web content always does.
     private func isOutsideWebContent(_ element: AXUIElement) -> Bool {
         var current = element
         for _ in 0..<20 {
