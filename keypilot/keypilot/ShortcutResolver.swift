@@ -34,6 +34,7 @@ enum ShortcutResolver {
         "Select All": "⌘A",
         "Save": "⌘S",
         "Find": "⌘F",
+        "Find in Page": "⌘F",
         "Open": "⌘O",
         "New": "⌘N",
         "Close": "⌘W",
